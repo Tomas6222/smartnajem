@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SmartNájem – klientský portál</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
+<style>
+  :root{
+    --navy:#132A46; --navy-light:#1F3D63; --red:#C6433D; --cream:#F6F2E9;
+    --ink:#1B1B1B; --line:#E1D9C8; --ok:#3F7A4E; --warn:#B4772A;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0; font-family:'Segoe UI',Arial,sans-serif; background:var(--cream); color:var(--ink);}
+  header.top{background:var(--navy); color:#fff; padding:14px 20px; display:flex; align-items:center; justify-content:space-between;}
+  header.top .brand{display:flex; align-items:center; gap:10px; font-size:20px; font-weight:600;}
+  header.top button{background:var(--red); color:#fff; border:none; padding:8px 14px; border-radius:6px; cursor:pointer; font-size:14px;}
+  .wrap{max-width:900px; margin:0 auto; padding:24px 16px 60px;}
+  .card{background:#fff; border:1px solid var(--line); border-radius:10px; padding:20px; margin-bottom:18px;}
+  h2{margin-top:0; color:var(--navy); font-size:19px;}
+  h3{color:var(--navy); font-size:16px; margin-bottom:8px;}
+  label{display:block; font-size:13px; color:#555; margin-top:10px; margin-bottom:3px;}
+  input[type=text],input[type=number],input[type=date],input[type=password],textarea,select{
+    width:100%; padding:8px 10px; border:1px solid var(--line); border-radius:6px; font-size:14px; font-family:inherit;
+  }
+  textarea{min-height:60px;}
+  .row{display:flex; gap:14px; flex-wrap:wrap;}
+  .row > div{flex:1; min-width:160px;}
+  .btn{background:var(--navy); color:#fff; border:none; padding:9px 16px; border-radius:6px; cursor:pointer; font-size:14px; margin-top:12px;}
+  .btn.red{background:var(--red);}
+  .btn.ghost{background:transparent; color:var(--navy); border:1px solid var(--navy);}
+  .btn:hover{opacity:0.9;}
+  .btn:disabled{opacity:0.5; cursor:default;}
+  .badge{display:inline-block; padding:3px 9px; border-radius:20px; font-size:12px; font-weight:600;}
+  .badge.ok{background:#E4F0E6; color:var(--ok);}
+  .badge.warn{background:#FBEFDD; color:var(--warn);}
+  .badge.due{background:#F9E4E2; color:var(--red);}
+  .tabs{display:flex; gap:8px; margin-bottom:18px; flex-wrap:wrap;}
+  .tabs button{background:#fff; border:1px solid var(--line); padding:9px 14px; border-radius:20px; cursor:pointer; font-size:14px;}
+  .tabs button.active{background:var(--navy); color:#fff; border-color:var(--navy);}
+  .login-box{max-width:420px; margin:60px auto; background:#fff; border:1px solid var(--line); border-radius:12px; padding:28px;}
+  .login-tabs{display:flex; margin-bottom:20px; border-bottom:1px solid var(--line);}
+  .login-tabs div{flex:1; text-align:center; padding:10px 4px; cursor:pointer; color:#888; font-size:14px; border-bottom:3px solid transparent;}
+  .login-tabs div.active{color:var(--navy); border-color:var(--red); font-weight:600;}
+  .list-item{border:1px solid var(--line); border-radius:8px; padding:14px; margin-bottom:12px;}
+  .list-item .top-row{display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;}
+  .muted{color:#777; font-size:13px;}
+  .err{color:var(--red); font-size:13px; margin-top:8px;}
+  .qr-box{text-align:center; padding:14px; border:1px dashed var(--line); border-radius:8px; margin-top:10px;}
+  .note{background:#FBF7EE; border:1px solid var(--line); border-radius:6px; padding:8px 10px; font-size:13px; margin-top:6px;}
+  a{color:var(--navy);}
+  .payout{font-size:26px; font-weight:700; color:var(--navy);}
+  .flag{background:#F9E4E2; border:1px solid var(--red); border-radius:8px; padding:10px 12px; margin-bottom:10px; font-size:14px;}
+  .spinner{text-align:center; padding:40px; color:#888;}
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<script>
+/* ---------------- WEBHOOK ENDPOINTS ---------------- */
+const HOOKS = {
+  login: 'https://hook.eu1.make.com/gdaqne847ddy5r7qa1ju9l4kw546dlqn',
+  updateProperty: 'https://hook.eu1.make.com/c8skobgoibcwe3ojxbwn4l3ugs743urh',
+  updateClient: 'https://hook.eu1.make.com/3kia1l5uxit2apnps504qswzkmwwzrjw',
+  adminLogin: 'https://hook.eu1.make.com/gn2nnqvsiro2zw69twtuip9hadm8p7y1',
+  adminData: 'https://hook.eu1.make.com/k0on1cglmx611stcvw8d17hbc2oqlqot'
+};
+
+async function callHook(url, payload){
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify(payload || {})
+  });
+  if(!res.ok) throw new Error('Server odpověděl chybou (' + res.status + ')');
+  const text = await res.text();
+  try{ return JSON.parse(text); }catch(e){ throw new Error('Neplatná odpověď serveru'); }
+}
+
+/* ---------------- STATE ---------------- */
+let state = {
+  screen:'login', loginTab:'client', pin:'', adminUser:'', adminPass:'', error:'', loading:false,
+  clientData:null,
+  adminTab:'nemovitosti',
+  properties:[], clients:[],
+};
+
+function setState(patch){ state = {...state, ...patch}; render(); }
+
+/* ---------------- HELPERS ---------------- */
+function fmtCZK(n){ return Number(n||0).toLocaleString('cs-CZ') + ' Kč'; }
+function fmtDate(d){ if(!d) return '—'; const dt = new Date(d); if(isNaN(dt)) return d; return dt.toLocaleDateString('cs-CZ'); }
+function toBool(v){ return v===true || v==='true' || v===1 || v==='1'; }
+function nextDueDate(day){
+  day = Number(day);
+  if(!day) return null;
+  const today = new Date();
+  let d = new Date(today.getFullYear(), today.getMonth(), day);
+  if(d < today) d = new Date(today.getFullYear(), today.getMonth()+1, day);
+  return d.toLocaleDateString('cs-CZ');
+}
+function daysUntil(dateStr){
+  if(!dateStr) return null;
+  const end = new Date(dateStr); const today = new Date();
+  return Math.ceil((end - today) / (1000*60*60*24));
+}
+function contractFlag(smlouvaDo){
+  const d = daysUntil(smlouvaDo);
+  if(d===null) return '';
+  if(d < 0) return `<div class="flag">⚠ Smlouva skončila ${fmtDate(smlouvaDo)}.</div>`;
+  if(d <= 60) return `<div class="flag">⏰ Smlouva končí za ${d} dní (${fmtDate(smlouvaDo)}).</div>`;
+  return '';
+}
+function mailtoLink(email, subject, body){
+  if(!email || !email.includes('@')) return null;
+  return `mailto:${email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+}
+function logoSvg(){
+  return `<svg width="26" height="26" viewBox="0 0 24 24" fill="none"><path d="M3 11L12 3L21 11" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M5 10V20H19V10" stroke="#fff" stroke-width="2" stroke-linejoin="round"/><path d="M9 15L11 17L15 12" stroke="#C6433D" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+}
+
+/* ---------------- LOGIN ---------------- */
+async function tryLogin(){
+  setState({error:'', loading:true});
+  try{
+    if(state.loginTab==='client'){
+      const data = await callHook(HOOKS.login, {pin: state.pin.trim()});
+      if(!data.found){ setState({loading:false, error:'PIN nenalezen.'}); return; }
+      const role = (data.role||'').trim();
+      setState({loading:false, screen: role==='podnajemce' ? 'podnajemce' : 'majitel', clientData: data, pin:''});
+    } else {
+      const data = await callHook(HOOKS.adminLogin, {username: state.adminUser.trim(), password: state.adminPass});
+      if(!data.success){ setState({loading:false, error:'Nesprávné jméno nebo heslo.'}); return; }
+      setState({loading:false, adminPass:''});
+      await loadAdminData();
+      setState({screen:'admin'});
+    }
+  }catch(e){
+    setState({loading:false, error: 'Nepodařilo se spojit se serverem. Zkuste to prosím znovu.'});
+  }
+}
+function logout(){
+  state = {screen:'login', loginTab:'client', pin:'', adminUser:'', adminPass:'', error:'', loading:false,
+    clientData:null, adminTab:'nemovitosti', properties:[], clients:[]};
+  render();
+}
+
+async function loadAdminData(){
+  const data = await callHook(HOOKS.adminData, {});
+  const properties = (data.properties && data.properties.records || []).map(r => ({
+    recId: r.id,
+    PropertyID: r.fields.PropertyID || '',
+    Address: r.fields.Address || '',
+    Owner: r.fields.Owner || '',
+    OwnerContact: r.fields.OwnerContact || '',
+    Rent: r.fields.Rent || 0,
+    Commission: r.fields.Commission || 0,
+    EnergySupplier: r.fields.EnergySupplier || '',
+    EnergyOnClient: !!r.fields.EnergyOnClient,
+    Occupied: !!r.fields.Occupied,
+    PhotosLink: r.fields.PhotosLink || '',
+    ContractLink: r.fields.ContractLink || '',
+    PayoutDueDay: r.fields.PayoutDueDay || '',
+    BankAccount: r.fields.BankAccount || ''
+  }));
+  const clients = (data.clients && data.clients.records || []).map(r => ({
+    recId: r.id,
+    ClientID: r.fields['Client ID'] || '',
+    Name: r.fields.Name || '',
+    Role: (r.fields['Role '] || '').trim(),
+    PropertyID: r.fields.PropertyID || '',
+    PIN: r.fields.PIN || '',
+    Contact: r.fields.Contact || '',
+    ContractFrom: r.fields.ContractFrom || '',
+    ContractTo: r.fields.ContractTo || '',
+    DueDay: r.fields.DueDay || '',
+    VariableSymbol: r.fields.VariableSymbol || '',
+    Paid: !!r.fields.Paid,
+    HandoverPhotosLink: r.fields.HandoverPhotosLink || ''
+  }));
+  state.properties = properties;
+  state.clients = clients;
+}
+
+/* ---------------- RENDER ---------------- */
+function render(){
+  const app = document.getElementById('app');
+  if(state.screen==='login'){ app.innerHTML = renderLogin(); attachLoginEvents(); return; }
+
+  let body='';
+  if(state.screen==='majitel') body = renderMajitel();
+  else if(state.screen==='podnajemce') body = renderPodnajemce();
+  else if(state.screen==='admin') body = renderAdmin();
+
+  app.innerHTML = `
+    <header class="top">
+      <div class="brand">${logoSvg()} SmartNájem</div>
+      <button id="logoutBtn">Odhlásit</button>
+    </header>
+    <div class="wrap">${body}</div>
+  `;
+  document.getElementById('logoutBtn').onclick = logout;
+  attachGlobalEvents();
+}
+
+function renderLogin(){
+  return `
+  <header class="top"><div class="brand">${logoSvg()} SmartNájem</div></header>
+  <div class="login-box">
+    <div class="login-tabs">
+      <div data-tab="client" class="${state.loginTab==='client'?'active':''}">Jsem klient</div>
+      <div data-tab="admin" class="${state.loginTab==='admin'?'active':''}">Jsem správce</div>
+    </div>
+    ${state.loginTab==='client' ? `
+      <label>Váš přístupový kód (PIN)</label>
+      <input type="text" id="pinInput" value="${state.pin}" placeholder="např. 1001">
+    ` : `
+      <label>Uživatelské jméno</label>
+      <input type="text" id="userInput" value="${state.adminUser}">
+      <label>Heslo</label>
+      <input type="password" id="pwInput" value="${state.adminPass}">
+    `}
+    ${state.error ? `<div class="err">${state.error}</div>` : ''}
+    <button class="btn" style="width:100%" id="loginBtn" ${state.loading?'disabled':''}>${state.loading?'Přihlašuji...':'Přihlásit se'}</button>
+  </div>
+  `;
+}
+function attachLoginEvents(){
+  document.querySelectorAll('.login-tabs div').forEach(el=>{
+    el.onclick = ()=> setState({loginTab: el.dataset.tab, error:''});
+  });
+  const pin = document.getElementById('pinInput');
+  const user = document.getElementById('userInput');
+  const pw = document.getElementById('pwInput');
+  if(pin){ pin.oninput = e=> state.pin = e.target.value; pin.onkeydown = e=>{ if(e.key==='Enter') tryLogin(); }; }
+  if(user){ user.oninput = e=> state.adminUser = e.target.value; }
+  if(pw){ pw.oninput = e=> state.adminPass = e.target.value; pw.onkeydown = e=>{ if(e.key==='Enter') tryLogin(); }; }
+  document.getElementById('loginBtn').onclick = tryLogin;
+}
+
+/* ---------- MAJITEL VIEW ---------- */
+function renderMajitel(){
+  const d = state.clientData;
+  const rent = Number(d.rent)||0;
+  const commission = Number(d.commission)||0;
+  const vyplata = Math.round(rent * (1 - commission/100));
+  return `
+  <div class="card">
+    <h2>Přehled nemovitosti – ${d.address||''}</h2>
+    <div class="row">
+      <div><label>Kdo v bytě aktuálně bydlí</label>
+        <span class="badge ${toBool(d.occupied)?'ok':'warn'}">${toBool(d.occupied)?'ANO – byt je obsazen':'NE – byt je momentálně volný'}</span>
+      </div>
+    </div>
+    <div class="row" style="margin-top:14px;">
+      <div><label>Sjednané nájemné</label><div style="font-size:18px;font-weight:600;">${fmtCZK(rent)}</div></div>
+      <div><label>Provize správy</label><div style="font-size:18px;font-weight:600;">${commission} %</div></div>
+      <div><label>Vaše měsíční výplata</label><div class="payout">${fmtCZK(vyplata)}</div></div>
+    </div>
+    <div class="row" style="margin-top:14px;">
+      <div><label>Nejbližší výplata od nás</label><div>${nextDueDate(d.payoutDueDay) || '—'}</div></div>
+      ${d.photosLink ? `<div><label>Fotky nemovitosti</label><a href="${d.photosLink}" target="_blank">otevřít odkaz</a></div>` : ''}
+      ${d.contractLink ? `<div><label>Smlouva</label><a href="${d.contractLink}" target="_blank">otevřít smlouvu</a></div>` : ''}
+    </div>
+  </div>
+  ${contractFlag(d.contractTo)}
+  <div class="card muted">Podnájemce a stav platby uvidíte zde, jakmile pro byt evidujeme aktivní smlouvu.</div>
+  `;
+}
+
+/* ---------- PODNÁJEMCE VIEW ---------- */
+function renderPodnajemce(){
+  const d = state.clientData;
+  const due = nextDueDate(d.dueDay);
+  const paid = toBool(d.paid);
+  return `
+  <div class="card">
+    <h2>Váš nájem – ${d.address||''}</h2>
+    <div class="row">
+      <div><label>Měsíční nájemné</label><div style="font-size:20px;font-weight:700;color:var(--navy)">${fmtCZK(d.rent)}</div></div>
+      <div><label>Datum splatnosti</label><div>${due || '—'}</div></div>
+      <div><label>Stav platby</label><span class="badge ${paid?'ok':'due'}">${paid?'Uhrazeno':'Čeká se na úhradu'}</span></div>
+    </div>
+    ${!paid ? renderQrBox(d) : ''}
+  </div>
+  ${contractFlag(d.contractTo)}
+  <div class="card">
+    <h3>Smlouva</h3>
+    <div class="muted">Platnost: ${fmtDate(d.contractFrom)} – ${fmtDate(d.contractTo)}</div>
+    ${d.contractLink ? `<div style="margin-top:6px;"><a href="${d.contractLink}" target="_blank">Otevřít smlouvu</a></div>` : ''}
+  </div>
+  ${d.handoverPhotos ? `<div class="card"><h3>Fotky bytu při převzetí</h3><a href="${d.handoverPhotos}" target="_blank">otevřít fotky</a></div>` : ''}
+  `;
+}
+function renderQrBox(d){
+  if(!d.bankAccount) return `<div class="muted" style="margin-top:10px;">Platební QR kód zatím není nastaven – kontaktujte prosím správce.</div>`;
+  const spd = `SPD*1.0*ACC:${d.bankAccount}*AM:${Number(d.rent||0).toFixed(2)}*CC:CZK*X-VS:${d.variableSymbol||''}*MSG:${encodeURIComponent('Najem '+(d.address||''))}`;
+  return `<div class="qr-box">
+    <div class="muted" style="margin-bottom:8px;">Naskenujte QR kód v bankovní aplikaci pro úhradu nájmu</div>
+    <canvas id="qrCanvas"></canvas>
+    <div class="muted" style="margin-top:6px;">VS: ${d.variableSymbol||'—'}</div>
+    <div style="display:none" data-spd="${spd}"></div>
+  </div>`;
+}
+
+/* ---------- ADMIN VIEW ---------- */
+function renderAdmin(){
+  return `
+  <div class="tabs">
+    <button data-t="nemovitosti" class="${state.adminTab==='nemovitosti'?'active':''}">Nemovitosti</button>
+    <button data-t="klienti" class="${state.adminTab==='klienti'?'active':''}">Klienti a PIN</button>
+    <button data-t="platby" class="${state.adminTab==='platby'?'active':''}">Splatnosti a platby</button>
+  </div>
+  ${state.adminTab==='nemovitosti' ? renderAdminProperties() : ''}
+  ${state.adminTab==='klienti' ? renderAdminClients() : ''}
+  ${state.adminTab==='platby' ? renderAdminPayments() : ''}
+  `;
+}
+
+function renderAdminProperties(){
+  return `
+  ${state.properties.map(p=>`
+    <div class="card">
+      <div class="top-row"><h3 style="margin:0;">${p.Address || '(bez adresy)'}</h3></div>
+      <div class="row">
+        <div><label>PropertyID (musí sedět s Airtable)</label><input type="text" data-p="${p.recId}" data-f="PropertyID" value="${p.PropertyID}" readonly></div>
+        <div><label>Adresa</label><input type="text" data-p="${p.recId}" data-f="Address" value="${p.Address}"></div>
+      </div>
+      <div class="row">
+        <div><label>Jméno majitele</label><input type="text" data-p="${p.recId}" data-f="Owner" value="${p.Owner}"></div>
+        <div><label>Kontakt na majitele (e-mail)</label><input type="text" data-p="${p.recId}" data-f="OwnerContact" value="${p.OwnerContact}"></div>
+      </div>
+      <div class="row">
+        <div><label>Sjednané nájemné (Kč)</label><input type="number" data-p="${p.recId}" data-f="Rent" value="${p.Rent}"></div>
+        <div><label>Provize správy (%)</label><input type="number" data-p="${p.recId}" data-f="Commission" value="${p.Commission}"></div>
+        <div><label>Splatnost výplaty majiteli (den v měsíci)</label><input type="number" min="1" max="28" data-p="${p.recId}" data-f="PayoutDueDay" value="${p.PayoutDueDay}"></div>
+      </div>
+      <div class="row">
+        <div><label>Dodavatel energie</label><input type="text" data-p="${p.recId}" data-f="EnergySupplier" value="${p.EnergySupplier}" placeholder="např. Innogy, ČEZ"></div>
+        <div><label>Energie vedena na klienta</label>
+          <select data-p="${p.recId}" data-f="EnergyOnClient">
+            <option value="true" ${p.EnergyOnClient?'selected':''}>Ano</option>
+            <option value="false" ${!p.EnergyOnClient?'selected':''}>Ne</option>
+          </select>
+        </div>
+        <div><label>Byt aktuálně obydlen</label>
+          <select data-p="${p.recId}" data-f="Occupied">
+            <option value="true" ${p.Occupied?'selected':''}>Ano</option>
+            <option value="false" ${!p.Occupied?'selected':''}>Ne</option>
+          </select>
+        </div>
+      </div>
+      <div class="row">
+        <div><label>Odkaz na fotky nemovitosti</label><input type="text" data-p="${p.recId}" data-f="PhotosLink" value="${p.PhotosLink}"></div>
+        <div><label>Odkaz na smlouvu (Disk)</label><input type="text" data-p="${p.recId}" data-f="ContractLink" value="${p.ContractLink}"></div>
+      </div>
+      <div class="row">
+        <div><label>Bankovní účet pro QR platby (IBAN)</label><input type="text" data-p="${p.recId}" data-f="BankAccount" value="${p.BankAccount}"></div>
+      </div>
+      <div class="err" id="err_p_${p.recId}"></div>
+      <button class="btn" onclick="savePropertyRow('${p.recId}')">Uložit</button>
+    </div>
+  `).join('')}
+  `;
+}
+
+function renderAdminClients(){
+  return `
+  ${state.clients.map(c=>{
+    return `
+    <div class="card">
+      <div class="top-row"><h3 style="margin:0;">${c.Name || '(bez jména)'}</h3></div>
+      <div class="row">
+        <div><label>ClientID (musí sedět s Airtable)</label><input type="text" data-s="${c.recId}" data-f="ClientID" value="${c.ClientID}" readonly></div>
+        <div><label>Role</label>
+          <select data-s="${c.recId}" data-f="Role">
+            <option value="majitel" ${c.Role==='majitel'?'selected':''}>Majitel</option>
+            <option value="podnajemce" ${c.Role==='podnajemce'?'selected':''}>Podnájemce</option>
+          </select>
+        </div>
+        <div><label>PIN podnájemce/majitele</label><input type="text" data-s="${c.recId}" data-f="PIN" value="${c.PIN}"></div>
+      </div>
+      <div class="row">
+        <div><label>Jméno</label><input type="text" data-s="${c.recId}" data-f="Name" value="${c.Name}"></div>
+        <div><label>Kontakt (e-mail)</label><input type="text" data-s="${c.recId}" data-f="Contact" value="${c.Contact}"></div>
+        <div><label>Nemovitost (PropertyID)</label><input type="text" data-s="${c.recId}" data-f="PropertyID" value="${c.PropertyID}"></div>
+      </div>
+      <div class="row">
+        <div><label>Smlouva od</label><input type="date" data-s="${c.recId}" data-f="ContractFrom" value="${c.ContractFrom}"></div>
+        <div><label>Smlouva do</label><input type="date" data-s="${c.recId}" data-f="ContractTo" value="${c.ContractTo}"></div>
+        <div><label>Splatnost k nám (den v měsíci)</label><input type="number" min="1" max="28" data-s="${c.recId}" data-f="DueDay" value="${c.DueDay}"></div>
+      </div>
+      <div class="row">
+        <div><label>Variabilní symbol</label><input type="text" data-s="${c.recId}" data-f="VariableSymbol" value="${c.VariableSymbol}"></div>
+        <div><label>Odkaz na fotky při převzetí bytu</label><input type="text" data-s="${c.recId}" data-f="HandoverPhotosLink" value="${c.HandoverPhotosLink}"></div>
+      </div>
+      ${contractFlag(c.ContractTo)}
+      <div class="err" id="err_s_${c.recId}"></div>
+      <button class="btn" onclick="saveClientRow('${c.recId}')">Uložit</button>
+    </div>
+    `;
+  }).join('')}
+  `;
+}
+
+function renderAdminPayments(){
+  return state.clients.map(c=>{
+    const p = state.properties.find(x=>x.PropertyID===c.PropertyID);
+    return `
+    <div class="card">
+      <div class="top-row">
+        <div><strong>${c.Name}</strong> <span class="muted">– ${p?p.Address:''}</span></div>
+        <span class="badge ${c.Paid?'ok':'due'}">${c.Paid?'Uhrazeno':'Čeká se'}</span>
+      </div>
+      <div class="row" style="margin-top:8px;">
+        <div class="muted">Splatnost k nám: ${nextDueDate(c.DueDay)||'—'} (VS ${c.VariableSymbol||'—'})</div>
+        <div class="muted">Splatnost k majiteli: ${nextDueDate(p?p.PayoutDueDay:null)||'—'}</div>
+      </div>
+      <button class="btn ghost" onclick="togglePaid('${c.recId}')">${c.Paid?'Označit jako neuhrazeno':'Označit jako uhrazeno'}</button>
+    </div>`;
+  }).join('') + `<div class="card muted">Automatické párování bankovních plateb (např. notifikace z ČSOB) appka zatím nemá – platby se označují ručně zde.</div>`;
+}
+
+/* ---------------- EVENT WIRING ---------------- */
+function attachGlobalEvents(){
+  document.querySelectorAll('.tabs button[data-t]').forEach(b=>{
+    b.onclick = ()=> setState({adminTab:b.dataset.t});
+  });
+  const qrHolder = document.querySelector('[data-spd]');
+  const canvas = document.getElementById('qrCanvas');
+  if(qrHolder && canvas && window.QRious){
+    new QRious({element:canvas, value:qrHolder.dataset.spd, size:180});
+  }
+}
+
+async function savePropertyRow(recId){
+  const p = state.properties.find(x=>x.recId===recId);
+  const payload = {propertyId: p.PropertyID};
+  document.querySelectorAll(`[data-p="${recId}"]`).forEach(inp=>{
+    const f = inp.dataset.f;
+    if(f==='PropertyID') return;
+    payload[f] = inp.value;
+    p[f] = (f==='EnergyOnClient'||f==='Occupied') ? (inp.value==='true') : inp.value;
+  });
+  const btn = event.target;
+  btn.disabled = true; btn.textContent = 'Ukládám...';
+  try{
+    await callHook(HOOKS.updateProperty, payload);
+    btn.textContent = 'Uloženo ✓';
+    setTimeout(()=>{ btn.disabled=false; btn.textContent='Uložit'; }, 1500);
+  }catch(e){
+    document.getElementById('err_p_'+recId).textContent = 'Uložení se nezdařilo, zkuste to prosím znovu.';
+    btn.disabled = false; btn.textContent = 'Uložit';
+  }
+}
+
+async function saveClientRow(recId){
+  const c = state.clients.find(x=>x.recId===recId);
+  const errEl = document.getElementById('err_s_'+recId);
+  errEl.textContent = '';
+  const newPin = document.querySelector(`[data-s="${recId}"][data-f="PIN"]`).value.trim();
+  const dup = state.clients.find(x=>x.recId!==recId && x.PIN===newPin);
+  if(dup){
+    errEl.textContent = `PIN ${newPin} už používá klient „${dup.Name}“. Zvolte jiný.`;
+    return;
+  }
+  const payload = {clientId: c.ClientID};
+  document.querySelectorAll(`[data-s="${recId}"]`).forEach(inp=>{
+    const f = inp.dataset.f;
+    if(f==='ClientID') return;
+    payload[f] = inp.value;
+    c[f] = inp.value;
+  });
+  const btn = event.target;
+  btn.disabled = true; btn.textContent = 'Ukládám...';
+  try{
+    await callHook(HOOKS.updateClient, payload);
+    btn.textContent = 'Uloženo ✓';
+    setTimeout(()=>{ btn.disabled=false; btn.textContent='Uložit'; }, 1500);
+  }catch(e){
+    errEl.textContent = 'Uložení se nezdařilo, zkuste to prosím znovu.';
+    btn.disabled = false; btn.textContent = 'Uložit';
+  }
+}
+
+async function togglePaid(recId){
+  const c = state.clients.find(x=>x.recId===recId);
+  const newPaid = !c.Paid;
+  try{
+    await callHook(HOOKS.updateClient, {
+      clientId: c.ClientID, Name:c.Name, Role:c.Role, PropertyID:c.PropertyID, PIN:c.PIN,
+      Contact:c.Contact, ContractFrom:c.ContractFrom, ContractTo:c.ContractTo, DueDay:c.DueDay,
+      VariableSymbol:c.VariableSymbol, Paid: newPaid, HandoverPhotosLink:c.HandoverPhotosLink
+    });
+    c.Paid = newPaid;
+    render();
+  }catch(e){
+    alert('Nepodařilo se uložit změnu, zkuste to prosím znovu.');
+  }
+}
+
+/* ---------------- INIT ---------------- */
+render();
+</script>
+</body>
+</html>
