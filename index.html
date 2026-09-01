@@ -80,7 +80,7 @@ async function callHook(url, payload){
 
 /* ---------------- STATE ---------------- */
 let state = {
-  screen:'login', loginTab:'client', pin:'', adminUser:'', adminPass:'', error:'', loading:false,
+  screen:'login', loginTab:'najemce', pin:'', adminUser:'', adminPass:'', error:'', loading:false,
   clientData:null,
   adminTab:'nemovitosti',
   properties:[], clients:[],
@@ -124,10 +124,15 @@ function logoSvg(){
 async function tryLogin(){
   setState({error:'', loading:true});
   try{
-    if(state.loginTab==='client'){
+    if(state.loginTab!=='admin'){
       const data = await callHook(HOOKS.login, {pin: state.pin.trim()});
       if(!data.found){ setState({loading:false, error:'PIN nenalezen.'}); return; }
       const role = (data.role||'').trim();
+      const expected = state.loginTab==='podnajemce' ? 'podnajemce' : 'majitel';
+      if(role !== expected){
+        setState({loading:false, error: role==='podnajemce' ? 'Tento PIN patří podnájemci – zkuste záložku "Jsem podnájemce".' : 'Tento PIN patří nájemci – zkuste záložku "Jsem nájemce".'});
+        return;
+      }
       setState({loading:false, screen: role==='podnajemce' ? 'podnajemce' : 'majitel', clientData: data, pin:''});
     } else {
       const data = await callHook(HOOKS.adminLogin, {username: state.adminUser.trim(), password: state.adminPass});
@@ -141,7 +146,7 @@ async function tryLogin(){
   }
 }
 function logout(){
-  state = {screen:'login', loginTab:'client', pin:'', adminUser:'', adminPass:'', error:'', loading:false,
+  state = {screen:'login', loginTab:'najemce', pin:'', adminUser:'', adminPass:'', error:'', loading:false,
     clientData:null, adminTab:'nemovitosti', properties:[], clients:[]};
   render();
 }
@@ -209,10 +214,11 @@ function renderLogin(){
   <header class="top"><div class="brand">${logoSvg()} SmartNájem</div></header>
   <div class="login-box">
     <div class="login-tabs">
-      <div data-tab="client" class="${state.loginTab==='client'?'active':''}">Jsem klient</div>
+      <div data-tab="najemce" class="${state.loginTab==='najemce'?'active':''}">Jsem nájemce</div>
+      <div data-tab="podnajemce" class="${state.loginTab==='podnajemce'?'active':''}">Jsem podnájemce</div>
       <div data-tab="admin" class="${state.loginTab==='admin'?'active':''}">Jsem správce</div>
     </div>
-    ${state.loginTab==='client' ? `
+    ${state.loginTab!=='admin' ? `
       <label>Váš přístupový kód (PIN)</label>
       <input type="text" id="pinInput" value="${state.pin}" placeholder="např. 1001">
     ` : `
