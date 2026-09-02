@@ -435,6 +435,12 @@ function renderAdminProperties(){
       <div><label>Sjednané nájemné (Kč)</label><input type="number" id="newPropRent"></div>
       <div><label>Provize správy (%)</label><input type="number" id="newPropCommission" value="18"></div>
     </div>
+    <h3 style="margin-top:16px;">Majitel nemovitosti</h3>
+    <div class="row">
+      <div><label>Jméno majitele</label><input type="text" id="newPropOwnerName"></div>
+      <div><label>Kontakt (e-mail)</label><input type="text" id="newPropOwnerContact"></div>
+      <div><label>PIN pro přihlášení majitele</label><input type="text" id="newPropOwnerPin"></div>
+    </div>
     <div class="err" id="err_prop_new"></div>
     <button class="btn" onclick="addPropertyRow()">Přidat nemovitost</button>
   </div>
@@ -446,8 +452,8 @@ function renderAdminProperties(){
         <div><label>Adresa</label><input type="text" data-p="${p.recId}" data-f="Address" value="${p.Address}"></div>
       </div>
       <div class="row">
-        <div><label>Jméno majitele</label><input type="text" data-p="${p.recId}" data-f="Owner" value="${p.Owner}"></div>
-        <div><label>Kontakt na majitele (e-mail)</label><input type="text" data-p="${p.recId}" data-f="OwnerContact" value="${p.OwnerContact}"></div>
+        <div><label>Jméno majitele (jen pro přehled – PIN se nastavuje v záložce "Klienti a PIN")</label><input type="text" data-p="${p.recId}" data-f="Owner" value="${p.Owner}"></div>
+        <div><label>Kontakt na majitele (jen pro přehled)</label><input type="text" data-p="${p.recId}" data-f="OwnerContact" value="${p.OwnerContact}"></div>
       </div>
       <div class="row">
         <div><label>Sjednané nájemné (Kč)</label><input type="number" data-p="${p.recId}" data-f="Rent" value="${p.Rent}"></div>
@@ -622,13 +628,26 @@ async function addPropertyRow(){
   const address = document.getElementById('newPropAddress').value.trim();
   const rent = document.getElementById('newPropRent').value;
   const commission = document.getElementById('newPropCommission').value;
+  const ownerName = document.getElementById('newPropOwnerName').value.trim();
+  const ownerContact = document.getElementById('newPropOwnerContact').value.trim();
+  const ownerPin = document.getElementById('newPropOwnerPin').value.trim();
   if(!id || !address){ errEl.textContent = 'Vyplňte prosím PropertyID i adresu.'; return; }
   if(state.properties.find(p=>p.PropertyID.toUpperCase()===id.toUpperCase())){
     errEl.textContent = `PropertyID "${id}" už existuje. Zvolte jiné.`;
     return;
   }
+  if(!ownerName || !ownerPin){
+    errEl.textContent = 'Vyplňte prosím jméno majitele a jeho PIN.';
+    return;
+  }
+  if(state.clients.find(c=>c.PIN===ownerPin)){
+    errEl.textContent = `PIN ${ownerPin} už používá jiný klient. Zvolte jiný.`;
+    return;
+  }
   try{
     await callHook(HOOKS.addProperty, {PropertyID:id, Address:address, Rent:rent, Commission:commission});
+    const clientId = 'c_' + id.toLowerCase();
+    await callHook(HOOKS.addClient, {ClientID:clientId, Name:ownerName, Role:'majitel', PropertyID:id, PIN:ownerPin, Contact:ownerContact});
     await loadAdminData();
     render();
   }catch(e){
