@@ -496,6 +496,53 @@ function renderAdminProperties(){
 }
 
 function renderAdminClients(){
+  const clientCard = (c) => `
+    <div class="list-item" style="border-left:4px solid ${c.Role==='podnajemce'?'#C6433D':'#132A46'};">
+      <span class="badge ${c.Role==='podnajemce'?'due':'ok'}" style="font-size:13px;">${c.Role==='podnajemce'?'PODNÁJEMCE':'MAJITEL BYTU'}</span>
+      <div class="row" style="margin-top:10px;">
+        <div><label>ClientID (musí sedět s Airtable)</label><input type="text" data-s="${c.recId}" data-f="ClientID" value="${c.ClientID}" readonly></div>
+        <div><label>Role</label>
+          <select data-s="${c.recId}" data-f="Role">
+            <option value="majitel" ${c.Role==='majitel'?'selected':''}>Majitel bytu</option>
+            <option value="podnajemce" ${c.Role==='podnajemce'?'selected':''}>Podnájemce</option>
+          </select>
+        </div>
+        <div><label>PIN</label><input type="text" data-s="${c.recId}" data-f="PIN" value="${c.PIN}"></div>
+      </div>
+      <div class="row">
+        <div><label>Jméno</label><input type="text" data-s="${c.recId}" data-f="Name" value="${c.Name}"></div>
+        <div><label>Kontakt (e-mail)</label><input type="text" data-s="${c.recId}" data-f="Contact" value="${c.Contact}"></div>
+        <div><label>Nemovitost (PropertyID)</label><input type="text" data-s="${c.recId}" data-f="PropertyID" value="${c.PropertyID}"></div>
+      </div>
+      <div class="row">
+        <div><label>Smlouva od</label><input type="date" data-s="${c.recId}" data-f="ContractFrom" value="${c.ContractFrom}"></div>
+        <div><label>Smlouva do</label><input type="date" data-s="${c.recId}" data-f="ContractTo" value="${c.ContractTo}"></div>
+        <div><label>Splatnost k nám (den v měsíci)</label><input type="number" min="1" max="28" data-s="${c.recId}" data-f="DueDay" value="${c.DueDay}"></div>
+      </div>
+      <div class="row">
+        <div><label>Variabilní symbol</label><input type="text" data-s="${c.recId}" data-f="VariableSymbol" value="${c.VariableSymbol}"></div>
+        <div><label>Odkaz na fotky při převzetí bytu</label><input type="text" data-s="${c.recId}" data-f="HandoverPhotosLink" value="${c.HandoverPhotosLink}"></div>
+      </div>
+      ${contractFlag(c.ContractTo)}
+      <div class="err" id="err_s_${c.recId}"></div>
+      <button class="btn" onclick="saveClientRow('${c.recId}')">Uložit</button>
+    </div>`;
+
+  const groups = state.properties.map(p=>{
+    const clients = state.clients.filter(c=>c.PropertyID.toUpperCase()===p.PropertyID.toUpperCase());
+    const owner = clients.filter(c=>c.Role!=='podnajemce');
+    const subs = clients.filter(c=>c.Role==='podnajemce');
+    return `
+    <div class="card">
+      <h3 style="margin-top:0;">${p.Address || p.PropertyID}</h3>
+      ${owner.length ? owner.map(clientCard).join('') : `<div class="muted" style="margin-bottom:10px;">Bez majitele s přihlášením.</div>`}
+      ${subs.length ? subs.map(clientCard).join('') : `<div class="muted">Bez podnájemce.</div>`}
+    </div>`;
+  }).join('');
+
+  const orphans = state.clients.filter(c=>!state.properties.find(p=>p.PropertyID.toUpperCase()===c.PropertyID.toUpperCase()));
+  const orphanHtml = orphans.length ? `<div class="card"><h3 style="margin-top:0;">Nepřiřazení klienti</h3>${orphans.map(clientCard).join('')}</div>` : '';
+
   return `
   <div class="card">
     <h3>Přidat nového klienta</h3>
@@ -518,40 +565,8 @@ function renderAdminClients(){
     <div class="err" id="err_client_new"></div>
     <button class="btn" onclick="addClientRow()">Přidat klienta</button>
   </div>
-  ${state.clients.map(c=>{
-    return `
-    <div class="card">
-      <div class="top-row"><h3 style="margin:0;">${c.Name || '(bez jména)'}</h3></div>
-      <div class="row">
-        <div><label>ClientID (musí sedět s Airtable)</label><input type="text" data-s="${c.recId}" data-f="ClientID" value="${c.ClientID}" readonly></div>
-        <div><label>Role</label>
-          <select data-s="${c.recId}" data-f="Role">
-            <option value="majitel" ${c.Role==='majitel'?'selected':''}>Majitel bytu</option>
-            <option value="podnajemce" ${c.Role==='podnajemce'?'selected':''}>Podnájemce</option>
-          </select>
-        </div>
-        <div><label>PIN majitele/podnájemce</label><input type="text" data-s="${c.recId}" data-f="PIN" value="${c.PIN}"></div>
-      </div>
-      <div class="row">
-        <div><label>Jméno</label><input type="text" data-s="${c.recId}" data-f="Name" value="${c.Name}"></div>
-        <div><label>Kontakt (e-mail)</label><input type="text" data-s="${c.recId}" data-f="Contact" value="${c.Contact}"></div>
-        <div><label>Nemovitost (PropertyID)</label><input type="text" data-s="${c.recId}" data-f="PropertyID" value="${c.PropertyID}"></div>
-      </div>
-      <div class="row">
-        <div><label>Smlouva od</label><input type="date" data-s="${c.recId}" data-f="ContractFrom" value="${c.ContractFrom}"></div>
-        <div><label>Smlouva do</label><input type="date" data-s="${c.recId}" data-f="ContractTo" value="${c.ContractTo}"></div>
-        <div><label>Splatnost k nám (den v měsíci)</label><input type="number" min="1" max="28" data-s="${c.recId}" data-f="DueDay" value="${c.DueDay}"></div>
-      </div>
-      <div class="row">
-        <div><label>Variabilní symbol</label><input type="text" data-s="${c.recId}" data-f="VariableSymbol" value="${c.VariableSymbol}"></div>
-        <div><label>Odkaz na fotky při převzetí bytu</label><input type="text" data-s="${c.recId}" data-f="HandoverPhotosLink" value="${c.HandoverPhotosLink}"></div>
-      </div>
-      ${contractFlag(c.ContractTo)}
-      <div class="err" id="err_s_${c.recId}"></div>
-      <button class="btn" onclick="saveClientRow('${c.recId}')">Uložit</button>
-    </div>
-    `;
-  }).join('')}
+  ${groups}
+  ${orphanHtml}
   `;
 }
 
