@@ -606,6 +606,51 @@ function renderAdminClients(){
 }
 
 function renderAdminInspections(){
+  const inspectionRow = (ins) => {
+    const d = daysUntil(ins.Date);
+    const soon = !ins.Done && d!==null && d<=7 && d>=0;
+    return `<div class="list-item" style="border-left:4px solid ${ins.Done?'#3F7A4E':(soon?'#B4772A':'#E1D9C8')};">
+      <div class="top-row">
+        <strong>${fmtDate(ins.Date)}</strong>
+        <div>${soon?'<span class="badge warn">blíží se</span>':''} ${ins.Done?'<span class="badge ok">hotovo</span>':'<span class="badge due">naplánováno</span>'}</div>
+      </div>
+      <label>Poznámka</label>
+      <textarea data-ins="${ins.recId}" data-f="Note">${ins.Note}</textarea>
+      <label style="display:flex; align-items:center; gap:8px; margin-top:10px;">
+        <input type="checkbox" data-ins="${ins.recId}" data-f="Done" ${ins.Done?'checked':''} style="width:auto;"> Hotovo
+      </label>
+      <div class="err" id="err_ins_${ins.recId}"></div>
+      <button class="btn" onclick="saveInspectionRow('${ins.recId}')">Uložit</button>
+    </div>`;
+  };
+
+  const groups = state.properties.map(p=>{
+    const list = state.inspections.filter(i=>i.PropertyID.toUpperCase()===p.PropertyID.toUpperCase())
+      .slice().sort((a,b)=>new Date(a.Date)-new Date(b.Date));
+    if(!list.length) return '';
+    const upcoming = list.filter(i=>!i.Done);
+    const done = list.filter(i=>i.Done);
+    const upcomingSoonCount = upcoming.filter(i=>{const d=daysUntil(i.Date); return d!==null && d<=7 && d>=0;}).length;
+    const key = 'inspgroup_'+p.recId;
+    const open = !!state.expanded[key];
+    const doneKey = 'inspdone_'+p.recId;
+    const doneOpen = !!state.expanded[doneKey];
+    return `
+    <div class="card">
+      <div class="top-row" style="cursor:pointer;" onclick="toggleExpand('${key}')">
+        <h3 style="margin:0;">${open?'▾':'▸'} ${p.Address || p.PropertyID}</h3>
+        <div>${upcomingSoonCount?`<span class="badge warn">${upcomingSoonCount} blíží se</span>`:''} <span class="muted">${list.length} prohlídek</span></div>
+      </div>
+      ${open ? `
+      ${upcoming.length ? upcoming.map(inspectionRow).join('') : `<div class="muted" style="margin-top:10px;">Žádná naplánovaná prohlídka.</div>`}
+      ${done.length ? `
+        <div class="muted" style="cursor:pointer;margin-top:10px;" onclick="toggleExpand('${doneKey}')">${doneOpen?'▾':'▸'} Vyřízené prohlídky (${done.length})</div>
+        ${doneOpen ? done.map(inspectionRow).join('') : ''}
+      ` : ''}
+      ` : ''}
+    </div>`;
+  }).join('');
+
   return `
   <div class="card">
     <h3>Naplánovat prohlídku</h3>
@@ -619,23 +664,7 @@ function renderAdminInspections(){
     <div class="err" id="err_ins_new"></div>
     <button class="btn" onclick="addInspectionRow()">Přidat prohlídku</button>
   </div>
-  ${state.inspections.slice().sort((a,b)=>new Date(a.Date)-new Date(b.Date)).map(ins=>{
-    const p = state.properties.find(x=>x.PropertyID===ins.PropertyID);
-    const d = daysUntil(ins.Date);
-    const soon = !ins.Done && d!==null && d<=7 && d>=0;
-    return `<div class="card">
-      <div class="top-row">
-        <div><strong>${p?p.Address:ins.PropertyID}</strong> – ${fmtDate(ins.Date)} ${soon?'<span class="badge warn">blíží se</span>':''} ${ins.Done?'<span class="badge ok">hotovo</span>':''}</div>
-      </div>
-      <label>Poznámka</label>
-      <textarea data-ins="${ins.recId}" data-f="Note">${ins.Note}</textarea>
-      <label style="display:flex; align-items:center; gap:8px; margin-top:10px;">
-        <input type="checkbox" data-ins="${ins.recId}" data-f="Done" ${ins.Done?'checked':''} style="width:auto;"> Hotovo
-      </label>
-      <div class="err" id="err_ins_${ins.recId}"></div>
-      <button class="btn" onclick="saveInspectionRow('${ins.recId}')">Uložit</button>
-    </div>`;
-  }).join('') || '<div class="card muted">Zatím žádné naplánované prohlídky.</div>'}
+  ${groups || '<div class="card muted">Zatím žádné naplánované prohlídky.</div>'}
   `;
 }
 
