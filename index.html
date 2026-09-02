@@ -362,7 +362,7 @@ function renderPodnajemce(){
   ${d.handoverPhotos ? `<div class="card"><h3>Fotky bytu při převzetí</h3><a href="${d.handoverPhotos}" target="_blank">otevřít fotky</a></div>` : ''}
   <div class="card">
     <h3>Historie plateb</h3>
-    ${(d.payments && d.payments.length) ? d.payments.map(p=>`<div class="note">${fmtDate(p.fields&&p.fields.DateReceived)}: ${fmtCZK(p.fields&&p.fields.Amount)}</div>`).join('') : `<div class="muted">Zatím žádné přijaté platby.</div>`}
+    ${(d.payments && d.payments.records && d.payments.records.length) ? d.payments.records.map(p=>`<div class="note">${fmtDate(p.fields&&p.fields.DateReceived)}: ${fmtCZK(p.fields&&p.fields.Amount)}</div>`).join('') : `<div class="muted">Zatím žádné přijaté platby.</div>`}
   </div>
   ${renderIssueBox(d)}
   `;
