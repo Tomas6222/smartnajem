@@ -90,7 +90,7 @@ let state = {
   screen:'login', loginTab:'najemce', pin:'', adminUser:'', adminPass:'', error:'', loading:false,
   clientData:null,
   adminTab:'nemovitosti',
-  properties:[], clients:[], issues:[], inspections:[], payments:[], issueText:'', issueSent:false,
+  properties:[], clients:[], issues:[], inspections:[], payments:[], issueText:'', issueSent:false, expanded:{},
 };
 
 function setState(patch){ state = {...state, ...patch}; render(); }
@@ -444,10 +444,17 @@ function renderAdminProperties(){
     <div class="err" id="err_prop_new"></div>
     <button class="btn" onclick="addPropertyRow()">Přidat nemovitost</button>
   </div>
-  ${state.properties.map(p=>`
+  ${state.properties.map(p=>{
+    const key = 'prop_'+p.recId;
+    const open = !!state.expanded[key];
+    return `
     <div class="card">
-      <div class="top-row"><h3 style="margin:0;">${p.Address || '(bez adresy)'}</h3></div>
-      <div class="row">
+      <div class="top-row" style="cursor:pointer;" onclick="toggleExpand('${key}')">
+        <h3 style="margin:0;">${open?'▾':'▸'} ${p.Address || '(bez adresy)'} <span class="muted" style="font-weight:normal;font-size:14px;">(${p.PropertyID})</span></h3>
+        <div>${fmtCZK(p.Rent)} <span class="badge ${p.Occupied?'ok':'warn'}">${p.Occupied?'obsazen':'volný'}</span></div>
+      </div>
+      ${open ? `
+      <div class="row" style="margin-top:14px;">
         <div><label>PropertyID (musí sedět s Airtable)</label><input type="text" data-p="${p.recId}" data-f="PropertyID" value="${p.PropertyID}" readonly></div>
         <div><label>Adresa</label><input type="text" data-p="${p.recId}" data-f="Address" value="${p.Address}"></div>
       </div>
@@ -490,8 +497,9 @@ function renderAdminProperties(){
         if(!linked.length) return `<div class="muted">K této nemovitosti zatím není přiřazený žádný klient.</div>`;
         return linked.map(c=>`<div class="note">${c.Name} <span class="badge ${c.Role==='podnajemce'?'due':'ok'}">${c.Role==='podnajemce'?'Podnájemce':'Majitel bytu'}</span> – PIN ${c.PIN}</div>`).join('');
       })()}
+      ` : ''}
     </div>
-  `).join('')}
+  `;}).join('')}
   `;
 }
 
@@ -512,7 +520,11 @@ function renderAdminClients(){
       <div class="row">
         <div><label>Jméno</label><input type="text" data-s="${c.recId}" data-f="Name" value="${c.Name}"></div>
         <div><label>Kontakt (e-mail)</label><input type="text" data-s="${c.recId}" data-f="Contact" value="${c.Contact}"></div>
-        <div><label>Nemovitost (PropertyID)</label><input type="text" data-s="${c.recId}" data-f="PropertyID" value="${c.PropertyID}"></div>
+        <div><label>Nemovitost (PropertyID)</label>
+          <select data-s="${c.recId}" data-f="PropertyID">
+            ${state.properties.map(p=>`<option value="${p.PropertyID}" ${p.PropertyID.toUpperCase()===c.PropertyID.toUpperCase()?'selected':''}>${p.Address}</option>`).join('')}
+          </select>
+        </div>
       </div>
       <div class="row">
         <div><label>Smlouva od</label><input type="date" data-s="${c.recId}" data-f="ContractFrom" value="${c.ContractFrom}"></div>
@@ -532,16 +544,31 @@ function renderAdminClients(){
     const clients = state.clients.filter(c=>c.PropertyID.toUpperCase()===p.PropertyID.toUpperCase());
     const owner = clients.filter(c=>c.Role!=='podnajemce');
     const subs = clients.filter(c=>c.Role==='podnajemce');
+    const key = 'clientgroup_'+p.recId;
+    const open = !!state.expanded[key];
     return `
     <div class="card">
-      <h3 style="margin-top:0;">${p.Address || p.PropertyID}</h3>
-      ${owner.length ? owner.map(clientCard).join('') : `<div class="muted" style="margin-bottom:10px;">Bez majitele s přihlášením.</div>`}
+      <div class="top-row" style="cursor:pointer;" onclick="toggleExpand('${key}')">
+        <h3 style="margin:0;">${open?'▾':'▸'} ${p.Address || p.PropertyID}</h3>
+        <div class="muted">${clients.length} klient(ů)</div>
+      </div>
+      ${open ? `
+      ${owner.length ? owner.map(clientCard).join('') : `<div class="muted" style="margin-top:10px;">Bez majitele s přihlášením.</div>`}
       ${subs.length ? subs.map(clientCard).join('') : `<div class="muted">Bez podnájemce.</div>`}
+      ` : ''}
     </div>`;
   }).join('');
 
   const orphans = state.clients.filter(c=>!state.properties.find(p=>p.PropertyID.toUpperCase()===c.PropertyID.toUpperCase()));
-  const orphanHtml = orphans.length ? `<div class="card"><h3 style="margin-top:0;">Nepřiřazení klienti</h3>${orphans.map(clientCard).join('')}</div>` : '';
+  const orphanKey = 'clientgroup_orphans';
+  const orphanOpen = !!state.expanded[orphanKey];
+  const orphanHtml = orphans.length ? `<div class="card">
+    <div class="top-row" style="cursor:pointer;" onclick="toggleExpand('${orphanKey}')">
+      <h3 style="margin:0;">${orphanOpen?'▾':'▸'} Nepřiřazení klienti</h3>
+      <div class="muted">${orphans.length} klient(ů)</div>
+    </div>
+    ${orphanOpen ? orphans.map(clientCard).join('') : ''}
+  </div>` : '';
 
   return `
   <div class="card">
@@ -631,6 +658,11 @@ function renderAdminPayments(){
 }
 
 /* ---------------- EVENT WIRING ---------------- */
+function toggleExpand(key){
+  state.expanded[key] = !state.expanded[key];
+  render();
+}
+
 function attachGlobalEvents(){
   document.querySelectorAll('.tabs button[data-t]').forEach(b=>{
     b.onclick = ()=> setState({adminTab:b.dataset.t});
