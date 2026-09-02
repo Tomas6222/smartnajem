@@ -64,7 +64,9 @@ const HOOKS = {
   updateProperty: 'https://hook.eu1.make.com/c8skobgoibcwe3ojxbwn4l3ugs743urh',
   updateClient: 'https://hook.eu1.make.com/3kia1l5uxit2apnps504qswzkmwwzrjw',
   adminLogin: 'https://hook.eu1.make.com/gn2nnqvsiro2zw69twtuip9hadm8p7y1',
-  adminData: 'https://hook.eu1.make.com/k0on1cglmx611stcvw8d17hbc2oqlqot'
+  adminData: 'https://hook.eu1.make.com/k0on1cglmx611stcvw8d17hbc2oqlqot',
+  reportIssue: 'https://hook.eu1.make.com/77asd3equg5e3ymqv890kur6flngqel6',
+  updateIssue: 'https://hook.eu1.make.com/oy8izyekphvhryhjzrs3xik7frucxuo9'
 };
 
 async function callHook(url, payload){
@@ -83,7 +85,7 @@ let state = {
   screen:'login', loginTab:'najemce', pin:'', adminUser:'', adminPass:'', error:'', loading:false,
   clientData:null,
   adminTab:'nemovitosti',
-  properties:[], clients:[],
+  properties:[], clients:[], issues:[], issueText:'', issueSent:false,
 };
 
 function setState(patch){ state = {...state, ...patch}; render(); }
@@ -147,7 +149,7 @@ async function tryLogin(){
 }
 function logout(){
   state = {screen:'login', loginTab:'najemce', pin:'', adminUser:'', adminPass:'', error:'', loading:false,
-    clientData:null, adminTab:'nemovitosti', properties:[], clients:[]};
+    clientData:null, adminTab:'nemovitosti', properties:[], clients:[], issues:[], issueText:'', issueSent:false};
   render();
 }
 
@@ -184,8 +186,18 @@ async function loadAdminData(){
     Paid: !!r.fields.Paid,
     HandoverPhotosLink: r.fields.HandoverPhotosLink || ''
   }));
+  const issues = (data.issues && data.issues.records || []).map(r => ({
+    recId: r.id,
+    PropertyID: r.fields.PropertyID || '',
+    ReportedBy: r.fields.ReportedBy || '',
+    DateReported: r.fields.DateReported || '',
+    Description: r.fields.Description || '',
+    AdminNote: r.fields.AdminNote || '',
+    Resolved: !!r.fields.Resolved
+  }));
   state.properties = properties;
   state.clients = clients;
+  state.issues = issues;
 }
 
 /* ---------------- RENDER ---------------- */
@@ -206,7 +218,30 @@ function render(){
     <div class="wrap">${body}</div>
   `;
   document.getElementById('logoutBtn').onclick = logout;
+  const issueBtn = document.getElementById('sendIssueBtn');
+  const issueTextarea = document.getElementById('issueText');
+  if(issueTextarea){ issueTextarea.oninput = e=> state.issueText = e.target.value; }
+  if(issueBtn){ issueBtn.onclick = sendIssue; }
   attachGlobalEvents();
+}
+
+async function sendIssue(){
+  const text = (state.issueText||'').trim();
+  const errEl = document.getElementById('issueErr');
+  if(!text){ errEl.textContent = 'Napište prosím popis závady.'; return; }
+  const btn = document.getElementById('sendIssueBtn');
+  btn.disabled = true; btn.textContent = 'Odesílám...';
+  try{
+    await callHook(HOOKS.reportIssue, {
+      propertyId: state.clientData.propertyId,
+      reportedBy: state.clientData.name,
+      description: text
+    });
+    setState({issueSent:true, issueText:''});
+  }catch(e){
+    errEl.textContent = 'Nepodařilo se odeslat, zkuste to prosím znovu.';
+    btn.disabled = false; btn.textContent = 'Odeslat závadu';
+  }
 }
 
 function renderLogin(){
@@ -271,8 +306,23 @@ function renderMajitel(){
     </div>
   </div>
   ${contractFlag(d.contractTo)}
+  ${renderIssueBox(d)}
   <div class="card muted">Podnájemce a stav platby uvidíte zde, jakmile pro byt evidujeme aktivní smlouvu.</div>
   `;
+}
+
+function renderIssueBox(d){
+  if(state.issueSent){
+    return `<div class="card"><h3>Nahlásit závadu</h3><div class="note">Děkujeme, závada byla odeslána správci.</div></div>`;
+  }
+  return `
+  <div class="card">
+    <h3>Nahlásit závadu</h3>
+    <label>Popište, co je potřeba opravit</label>
+    <textarea id="issueText" placeholder="Např. kape kohoutek v koupelně...">${state.issueText}</textarea>
+    <div class="err" id="issueErr"></div>
+    <button class="btn" id="sendIssueBtn">Odeslat závadu</button>
+  </div>`;
 }
 
 /* ---------- PODNÁJEMCE VIEW ---------- */
@@ -297,6 +347,7 @@ function renderPodnajemce(){
     ${d.contractLink ? `<div style="margin-top:6px;"><a href="${d.contractLink}" target="_blank">Otevřít smlouvu</a></div>` : ''}
   </div>
   ${d.handoverPhotos ? `<div class="card"><h3>Fotky bytu při převzetí</h3><a href="${d.handoverPhotos}" target="_blank">otevřít fotky</a></div>` : ''}
+  ${renderIssueBox(d)}
   `;
 }
 function renderQrBox(d){
@@ -312,16 +363,42 @@ function renderQrBox(d){
 
 /* ---------- ADMIN VIEW ---------- */
 function renderAdmin(){
+  const unresolvedCount = state.issues.filter(i=>!i.Resolved).length;
   return `
   <div class="tabs">
     <button data-t="nemovitosti" class="${state.adminTab==='nemovitosti'?'active':''}">Nemovitosti</button>
     <button data-t="klienti" class="${state.adminTab==='klienti'?'active':''}">Klienti a PIN</button>
     <button data-t="platby" class="${state.adminTab==='platby'?'active':''}">Splatnosti a platby</button>
+    <button data-t="zavady" class="${state.adminTab==='zavady'?'active':''}">Závady${unresolvedCount?` <span class="badge due">${unresolvedCount}</span>`:''}</button>
   </div>
   ${state.adminTab==='nemovitosti' ? renderAdminProperties() : ''}
   ${state.adminTab==='klienti' ? renderAdminClients() : ''}
   ${state.adminTab==='platby' ? renderAdminPayments() : ''}
+  ${state.adminTab==='zavady' ? renderAdminIssues() : ''}
   `;
+}
+
+function renderAdminIssues(){
+  if(!state.issues.length) return `<div class="card muted">Zatím nejsou nahlášené žádné závady.</div>`;
+  const sorted = state.issues.slice().sort((a,b)=> (a.Resolved===b.Resolved)?0:(a.Resolved?1:-1));
+  return sorted.map(i=>{
+    const p = state.properties.find(x=>x.PropertyID===i.PropertyID);
+    return `
+    <div class="card">
+      <div class="top-row">
+        <div><strong>${p?p.Address:i.PropertyID}</strong> <span class="muted">– nahlásil ${i.ReportedBy}, ${fmtDate(i.DateReported)}</span></div>
+        <span class="badge ${i.Resolved?'ok':'due'}">${i.Resolved?'Vyřízeno':'Nevyřízeno'}</span>
+      </div>
+      <div class="note">${i.Description}</div>
+      <label>Poznámka k řešení</label>
+      <textarea data-i="${i.recId}" data-f="AdminNote">${i.AdminNote}</textarea>
+      <label style="display:flex; align-items:center; gap:8px; margin-top:10px;">
+        <input type="checkbox" data-i="${i.recId}" data-f="Resolved" ${i.Resolved?'checked':''} style="width:auto;"> Vyřízeno
+      </label>
+      <div class="err" id="err_i_${i.recId}"></div>
+      <button class="btn" onclick="saveIssueRow('${i.recId}')">Uložit</button>
+    </div>`;
+  }).join('');
 }
 
 function renderAdminProperties(){
@@ -486,6 +563,23 @@ async function saveClientRow(recId){
     setTimeout(()=>{ btn.disabled=false; btn.textContent='Uložit'; }, 1500);
   }catch(e){
     errEl.textContent = 'Uložení se nezdařilo, zkuste to prosím znovu.';
+    btn.disabled = false; btn.textContent = 'Uložit';
+  }
+}
+
+async function saveIssueRow(recId){
+  const i = state.issues.find(x=>x.recId===recId);
+  const note = document.querySelector(`[data-i="${recId}"][data-f="AdminNote"]`).value;
+  const resolved = document.querySelector(`[data-i="${recId}"][data-f="Resolved"]`).checked;
+  const btn = event.target;
+  btn.disabled = true; btn.textContent = 'Ukládám...';
+  try{
+    await callHook(HOOKS.updateIssue, {recId, adminNote: note, resolved});
+    i.AdminNote = note; i.Resolved = resolved;
+    btn.textContent = 'Uloženo ✓';
+    setTimeout(()=>{ render(); }, 700);
+  }catch(e){
+    document.getElementById('err_i_'+recId).textContent = 'Uložení se nezdařilo, zkuste to prosím znovu.';
     btn.disabled = false; btn.textContent = 'Uložit';
   }
 }
