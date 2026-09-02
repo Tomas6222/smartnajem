@@ -384,7 +384,15 @@ function renderQrBox(d){
 function renderAdmin(){
   const unresolvedCount = state.issues.filter(i=>!i.Resolved).length;
   const upcomingCount = state.inspections.filter(i=>!i.Done && daysUntil(i.Date)!==null && daysUntil(i.Date)<=7 && daysUntil(i.Date)>=0).length;
+  const nextInspection = state.inspections.filter(i=>!i.Done && daysUntil(i.Date)!==null && daysUntil(i.Date)>=0)
+    .sort((a,b)=>new Date(a.Date)-new Date(b.Date))[0];
+  const nextInspectionBanner = nextInspection ? (()=>{
+    const p = state.properties.find(x=>x.PropertyID===nextInspection.PropertyID);
+    const d = daysUntil(nextInspection.Date);
+    return `<div class="flag" style="background:#FBEFDD;border-color:#B4772A;">📅 Nejbližší prohlídka: <strong>${fmtDate(nextInspection.Date)}</strong> (za ${d} ${d===1?'den':(d<5?'dny':'dní')}) – ${p?p.Address:nextInspection.PropertyID}</div>`;
+  })() : '';
   return `
+  ${nextInspectionBanner}
   <div class="tabs">
     <button data-t="nemovitosti" class="${state.adminTab==='nemovitosti'?'active':''}">Nemovitosti</button>
     <button data-t="klienti" class="${state.adminTab==='klienti'?'active':''}">Klienti a PIN</button>
