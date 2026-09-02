@@ -693,14 +693,19 @@ function paymentHistoryHtml(clientId){
 }
 
 function renderAdminPayments(){
-  return state.clients.map(c=>{
+  const active = state.clients.filter(c=>c.Role==='podnajemce' && c.PIN);
+  if(!active.length) return '<div class="card muted">Zatím žádný aktivní podnájemce k evidenci plateb.</div>';
+  const rows = active.map(c=>{
     const p = state.properties.find(x=>x.PropertyID===c.PropertyID);
+    const key = 'pay_'+c.recId;
+    const open = !!state.expanded[key];
     return `
     <div class="card">
-      <div class="top-row">
-        <div><strong>${c.Name}</strong> <span class="muted">– ${p?p.Address:''}</span></div>
+      <div class="top-row" style="cursor:pointer;" onclick="toggleExpand('${key}')">
+        <h3 style="margin:0;">${open?'▾':'▸'} ${c.Name} <span class="muted" style="font-weight:normal;font-size:14px;">– ${p?p.Address:c.PropertyID}</span></h3>
         <span class="badge ${c.Paid?'ok':'due'}">${c.Paid?'Uhrazeno':'Čeká se'}</span>
       </div>
+      ${open ? `
       <div class="row" style="margin-top:8px;">
         <div class="muted">Splatnost k nám: ${nextDueDate(c.DueDay)||'—'} (VS ${c.VariableSymbol||'—'})</div>
         <div class="muted">Splatnost k majiteli: ${nextDueDate(p?p.PayoutDueDay:null)||'—'}</div>
@@ -708,8 +713,10 @@ function renderAdminPayments(){
       <button class="btn ghost" onclick="togglePaid('${c.recId}')">${c.Paid?'Označit jako neuhrazeno':'Označit jako uhrazeno'}</button>
       <h3 style="margin-top:16px;">Historie plateb</h3>
       ${paymentHistoryHtml(c.ClientID)}
+      ` : ''}
     </div>`;
-  }).join('') + `<div class="card muted">Automatické párování bankovních plateb (např. notifikace z ČSOB) appka zatím nemá – platby se označují ručně zde.</div>`;
+  }).join('');
+  return rows + `<div class="card muted">Automatické párování bankovních plateb (např. notifikace z ČSOB) probíhá jednou měsíčně na pozadí – ruční označení zde vždy funguje okamžitě.</div>`;
 }
 
 /* ---------------- EVENT WIRING ---------------- */
