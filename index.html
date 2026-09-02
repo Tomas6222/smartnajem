@@ -69,7 +69,9 @@ const HOOKS = {
   reportIssue: 'https://hook.eu1.make.com/77asd3equg5e3ymqv890kur6flngqel6',
   updateIssue: 'https://hook.eu1.make.com/oy8izyekphvhryhjzrs3xik7frucxuo9',
   addInspection: 'https://hook.eu1.make.com/bw9iinucw728dfxyk56ah8atw55r3c29',
-  updateInspection: 'https://hook.eu1.make.com/n1u2rupk519l9chdcsf9dccs5dubifue'
+  updateInspection: 'https://hook.eu1.make.com/n1u2rupk519l9chdcsf9dccs5dubifue',
+  addProperty: 'https://hook.eu1.make.com/18c9nljc35giv9tw4quift7r39hy8m6a',
+  addClient: 'https://hook.eu1.make.com/6628jk5t51j9m1e9k2e8ws6f77ym5nje'
 };
 
 async function callHook(url, payload){
@@ -423,6 +425,19 @@ function renderAdminIssues(){
 
 function renderAdminProperties(){
   return `
+  <div class="card">
+    <h3>Přidat novou nemovitost</h3>
+    <div class="row">
+      <div><label>PropertyID (jedinečné, např. P4)</label><input type="text" id="newPropId"></div>
+      <div><label>Adresa</label><input type="text" id="newPropAddress"></div>
+    </div>
+    <div class="row">
+      <div><label>Sjednané nájemné (Kč)</label><input type="number" id="newPropRent"></div>
+      <div><label>Provize správy (%)</label><input type="number" id="newPropCommission" value="18"></div>
+    </div>
+    <div class="err" id="err_prop_new"></div>
+    <button class="btn" onclick="addPropertyRow()">Přidat nemovitost</button>
+  </div>
   ${state.properties.map(p=>`
     <div class="card">
       <div class="top-row"><h3 style="margin:0;">${p.Address || '(bez adresy)'}</h3></div>
@@ -470,6 +485,27 @@ function renderAdminProperties(){
 
 function renderAdminClients(){
   return `
+  <div class="card">
+    <h3>Přidat nového klienta</h3>
+    <div class="row">
+      <div><label>ClientID (jedinečné, např. c6)</label><input type="text" id="newClientId"></div>
+      <div><label>Role</label>
+        <select id="newClientRole">
+          <option value="majitel">Majitel bytu</option>
+          <option value="podnajemce">Podnájemce</option>
+        </select>
+      </div>
+      <div><label>PIN (jedinečný přístupový kód)</label><input type="text" id="newClientPin"></div>
+    </div>
+    <div class="row">
+      <div><label>Jméno</label><input type="text" id="newClientName"></div>
+      <div><label>Nemovitost (PropertyID)</label>
+        <select id="newClientPropertyId">${state.properties.map(p=>`<option value="${p.PropertyID}">${p.Address}</option>`).join('')}</select>
+      </div>
+    </div>
+    <div class="err" id="err_client_new"></div>
+    <button class="btn" onclick="addClientRow()">Přidat klienta</button>
+  </div>
   ${state.clients.map(c=>{
     return `
     <div class="card">
@@ -576,6 +612,53 @@ function attachGlobalEvents(){
   const canvas = document.getElementById('qrCanvas');
   if(qrHolder && canvas && window.QRious){
     new QRious({element:canvas, value:qrHolder.dataset.spd, size:180});
+  }
+}
+
+async function addPropertyRow(){
+  const errEl = document.getElementById('err_prop_new');
+  errEl.textContent = '';
+  const id = document.getElementById('newPropId').value.trim();
+  const address = document.getElementById('newPropAddress').value.trim();
+  const rent = document.getElementById('newPropRent').value;
+  const commission = document.getElementById('newPropCommission').value;
+  if(!id || !address){ errEl.textContent = 'Vyplňte prosím PropertyID i adresu.'; return; }
+  if(state.properties.find(p=>p.PropertyID.toUpperCase()===id.toUpperCase())){
+    errEl.textContent = `PropertyID "${id}" už existuje. Zvolte jiné.`;
+    return;
+  }
+  try{
+    await callHook(HOOKS.addProperty, {PropertyID:id, Address:address, Rent:rent, Commission:commission});
+    await loadAdminData();
+    render();
+  }catch(e){
+    errEl.textContent = 'Nepodařilo se přidat, zkuste to prosím znovu.';
+  }
+}
+
+async function addClientRow(){
+  const errEl = document.getElementById('err_client_new');
+  errEl.textContent = '';
+  const id = document.getElementById('newClientId').value.trim();
+  const role = document.getElementById('newClientRole').value;
+  const pin = document.getElementById('newClientPin').value.trim();
+  const name = document.getElementById('newClientName').value.trim();
+  const propertyId = document.getElementById('newClientPropertyId').value;
+  if(!id || !pin || !name){ errEl.textContent = 'Vyplňte prosím ClientID, jméno i PIN.'; return; }
+  if(state.clients.find(c=>c.ClientID.toUpperCase()===id.toUpperCase())){
+    errEl.textContent = `ClientID "${id}" už existuje. Zvolte jiné.`;
+    return;
+  }
+  if(state.clients.find(c=>c.PIN===pin)){
+    errEl.textContent = `PIN ${pin} už používá jiný klient. Zvolte jiný.`;
+    return;
+  }
+  try{
+    await callHook(HOOKS.addClient, {ClientID:id, Name:name, Role:role, PropertyID:propertyId, PIN:pin});
+    await loadAdminData();
+    render();
+  }catch(e){
+    errEl.textContent = 'Nepodařilo se přidat, zkuste to prosím znovu.';
   }
 }
 
