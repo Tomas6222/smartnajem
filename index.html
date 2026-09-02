@@ -484,6 +484,12 @@ function renderAdminProperties(){
       </div>
       <div class="err" id="err_p_${p.recId}"></div>
       <button class="btn" onclick="savePropertyRow('${p.recId}')">Uložit</button>
+      <h3 style="margin-top:16px;">Přiřazení klienti</h3>
+      ${(()=>{
+        const linked = state.clients.filter(c=>c.PropertyID.toUpperCase()===p.PropertyID.toUpperCase());
+        if(!linked.length) return `<div class="muted">K této nemovitosti zatím není přiřazený žádný klient.</div>`;
+        return linked.map(c=>`<div class="note">${c.Name} <span class="badge ${c.Role==='podnajemce'?'due':'ok'}">${c.Role==='podnajemce'?'Podnájemce':'Majitel bytu'}</span> – PIN ${c.PIN}</div>`).join('');
+      })()}
     </div>
   `).join('')}
   `;
