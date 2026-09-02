@@ -402,16 +402,15 @@ function renderAdmin(){
 
 function renderAdminIssues(){
   if(!state.issues.length) return `<div class="card muted">Zatím nejsou nahlášené žádné závady.</div>`;
-  const sorted = state.issues.slice().sort((a,b)=> (a.Resolved===b.Resolved)?0:(a.Resolved?1:-1));
-  return sorted.map(i=>{
+  const issueRow = (i) => {
     const p = state.properties.find(x=>x.PropertyID===i.PropertyID);
     return `
-    <div class="card">
+    <div class="list-item" style="border-left:4px solid ${i.Resolved?'#3F7A4E':'#C6433D'};">
       <div class="top-row">
-        <div><strong>${p?p.Address:i.PropertyID}</strong> <span class="muted">– nahlásil ${i.ReportedBy}, ${fmtDate(i.DateReported)}</span></div>
+        <div><strong>${p?p.Address:(i.PropertyID||'(bez nemovitosti)')}</strong> <span class="muted">– nahlásil ${i.ReportedBy||'neznámý'}, ${fmtDate(i.DateReported)}</span></div>
         <span class="badge ${i.Resolved?'ok':'due'}">${i.Resolved?'Vyřízeno':'Nevyřízeno'}</span>
       </div>
-      <div class="note">${i.Description}</div>
+      <div class="note">${i.Description || '(bez popisu)'}</div>
       <label>Poznámka k řešení</label>
       <textarea data-i="${i.recId}" data-f="AdminNote">${i.AdminNote}</textarea>
       <label style="display:flex; align-items:center; gap:8px; margin-top:10px;">
@@ -420,7 +419,17 @@ function renderAdminIssues(){
       <div class="err" id="err_i_${i.recId}"></div>
       <button class="btn" onclick="saveIssueRow('${i.recId}')">Uložit</button>
     </div>`;
-  }).join('');
+  };
+  const unresolved = state.issues.filter(i=>!i.Resolved);
+  const resolved = state.issues.filter(i=>i.Resolved);
+  const resolvedOpen = !!state.expanded['issues_resolved'];
+  return `
+  ${unresolved.length ? unresolved.map(issueRow).join('') : '<div class="card muted">Žádné nevyřízené závady. 🎉</div>'}
+  ${resolved.length ? `
+    <div class="card muted" style="cursor:pointer;" onclick="toggleExpand('issues_resolved')">${resolvedOpen?'▾':'▸'} Vyřízené závady (${resolved.length})</div>
+    ${resolvedOpen ? resolved.map(issueRow).join('') : ''}
+  ` : ''}
+  `;
 }
 
 function renderAdminProperties(){
@@ -631,6 +640,7 @@ function renderAdminInspections(){
     const upcoming = list.filter(i=>!i.Done);
     const done = list.filter(i=>i.Done);
     const upcomingSoonCount = upcoming.filter(i=>{const d=daysUntil(i.Date); return d!==null && d<=7 && d>=0;}).length;
+    const nextDate = upcoming.length ? fmtDate(upcoming[0].Date) : null;
     const key = 'inspgroup_'+p.recId;
     const open = !!state.expanded[key];
     const doneKey = 'inspdone_'+p.recId;
@@ -639,7 +649,7 @@ function renderAdminInspections(){
     <div class="card">
       <div class="top-row" style="cursor:pointer;" onclick="toggleExpand('${key}')">
         <h3 style="margin:0;">${open?'▾':'▸'} ${p.Address || p.PropertyID}</h3>
-        <div>${upcomingSoonCount?`<span class="badge warn">${upcomingSoonCount} blíží se</span>`:''} <span class="muted">${list.length} prohlídek</span></div>
+        <div>${nextDate ? `<span class="badge ${upcomingSoonCount?'warn':'due'}">nejbližší: ${nextDate}</span>` : ''} <span class="muted">${list.length} prohlídek</span></div>
       </div>
       ${open ? `
       ${upcoming.length ? upcoming.map(inspectionRow).join('') : `<div class="muted" style="margin-top:10px;">Žádná naplánovaná prohlídka.</div>`}
