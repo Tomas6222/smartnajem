@@ -132,7 +132,7 @@ async function tryLogin(){
       const role = (data.role||'').trim();
       const expected = state.loginTab==='podnajemce' ? 'podnajemce' : 'majitel';
       if(role !== expected){
-        setState({loading:false, error: role==='podnajemce' ? 'Tento PIN patří podnájemci – zkuste záložku "Jsem podnájemce".' : 'Tento PIN patří nájemci – zkuste záložku "Jsem nájemce".'});
+        setState({loading:false, error: role==='podnajemce' ? 'Tento PIN patří podnájemci – zkuste záložku "Jsem podnájemce".' : 'Tento PIN patří majiteli bytu – zkuste záložku "Jsem majitel bytu".'});
         return;
       }
       setState({loading:false, screen: role==='podnajemce' ? 'podnajemce' : 'majitel', clientData: data, pin:''});
@@ -249,7 +249,7 @@ function renderLogin(){
   <header class="top"><div class="brand">${logoSvg()} SmartNájem</div></header>
   <div class="login-box">
     <div class="login-tabs">
-      <div data-tab="najemce" class="${state.loginTab==='najemce'?'active':''}">Jsem nájemce</div>
+      <div data-tab="najemce" class="${state.loginTab==='najemce'?'active':''}">Jsem majitel bytu</div>
       <div data-tab="podnajemce" class="${state.loginTab==='podnajemce'?'active':''}">Jsem podnájemce</div>
       <div data-tab="admin" class="${state.loginTab==='admin'?'active':''}">Jsem správce</div>
     </div>
@@ -306,7 +306,6 @@ function renderMajitel(){
     </div>
   </div>
   ${contractFlag(d.contractTo)}
-  ${renderIssueBox(d)}
   <div class="card muted">Podnájemce a stav platby uvidíte zde, jakmile pro byt evidujeme aktivní smlouvu.</div>
   `;
 }
@@ -411,13 +410,13 @@ function renderAdminProperties(){
         <div><label>Adresa</label><input type="text" data-p="${p.recId}" data-f="Address" value="${p.Address}"></div>
       </div>
       <div class="row">
-        <div><label>Jméno nájemce</label><input type="text" data-p="${p.recId}" data-f="Owner" value="${p.Owner}"></div>
-        <div><label>Kontakt na nájemce (e-mail)</label><input type="text" data-p="${p.recId}" data-f="OwnerContact" value="${p.OwnerContact}"></div>
+        <div><label>Jméno majitele</label><input type="text" data-p="${p.recId}" data-f="Owner" value="${p.Owner}"></div>
+        <div><label>Kontakt na majitele (e-mail)</label><input type="text" data-p="${p.recId}" data-f="OwnerContact" value="${p.OwnerContact}"></div>
       </div>
       <div class="row">
         <div><label>Sjednané nájemné (Kč)</label><input type="number" data-p="${p.recId}" data-f="Rent" value="${p.Rent}"></div>
         <div><label>Provize správy (%)</label><input type="number" data-p="${p.recId}" data-f="Commission" value="${p.Commission}"></div>
-        <div><label>Splatnost výplaty nájemci (den v měsíci)</label><input type="number" min="1" max="28" data-p="${p.recId}" data-f="PayoutDueDay" value="${p.PayoutDueDay}"></div>
+        <div><label>Splatnost výplaty majiteli (den v měsíci)</label><input type="number" min="1" max="28" data-p="${p.recId}" data-f="PayoutDueDay" value="${p.PayoutDueDay}"></div>
       </div>
       <div class="row">
         <div><label>Dodavatel energie</label><input type="text" data-p="${p.recId}" data-f="EnergySupplier" value="${p.EnergySupplier}" placeholder="např. Innogy, ČEZ"></div>
@@ -458,11 +457,11 @@ function renderAdminClients(){
         <div><label>ClientID (musí sedět s Airtable)</label><input type="text" data-s="${c.recId}" data-f="ClientID" value="${c.ClientID}" readonly></div>
         <div><label>Role</label>
           <select data-s="${c.recId}" data-f="Role">
-            <option value="majitel" ${c.Role==='majitel'?'selected':''}>Nájemce</option>
+            <option value="majitel" ${c.Role==='majitel'?'selected':''}>Majitel bytu</option>
             <option value="podnajemce" ${c.Role==='podnajemce'?'selected':''}>Podnájemce</option>
           </select>
         </div>
-        <div><label>PIN nájemce/podnájemce</label><input type="text" data-s="${c.recId}" data-f="PIN" value="${c.PIN}"></div>
+        <div><label>PIN majitele/podnájemce</label><input type="text" data-s="${c.recId}" data-f="PIN" value="${c.PIN}"></div>
       </div>
       <div class="row">
         <div><label>Jméno</label><input type="text" data-s="${c.recId}" data-f="Name" value="${c.Name}"></div>
@@ -498,7 +497,7 @@ function renderAdminPayments(){
       </div>
       <div class="row" style="margin-top:8px;">
         <div class="muted">Splatnost k nám: ${nextDueDate(c.DueDay)||'—'} (VS ${c.VariableSymbol||'—'})</div>
-        <div class="muted">Splatnost k nájemci: ${nextDueDate(p?p.PayoutDueDay:null)||'—'}</div>
+        <div class="muted">Splatnost k majiteli: ${nextDueDate(p?p.PayoutDueDay:null)||'—'}</div>
       </div>
       <button class="btn ghost" onclick="togglePaid('${c.recId}')">${c.Paid?'Označit jako neuhrazeno':'Označit jako uhrazeno'}</button>
     </div>`;
