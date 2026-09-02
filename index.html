@@ -67,7 +67,9 @@ const HOOKS = {
   adminLogin: 'https://hook.eu1.make.com/gn2nnqvsiro2zw69twtuip9hadm8p7y1',
   adminData: 'https://hook.eu1.make.com/k0on1cglmx611stcvw8d17hbc2oqlqot',
   reportIssue: 'https://hook.eu1.make.com/77asd3equg5e3ymqv890kur6flngqel6',
-  updateIssue: 'https://hook.eu1.make.com/oy8izyekphvhryhjzrs3xik7frucxuo9'
+  updateIssue: 'https://hook.eu1.make.com/oy8izyekphvhryhjzrs3xik7frucxuo9',
+  addInspection: 'https://hook.eu1.make.com/bw9iinucw728dfxyk56ah8atw55r3c29',
+  updateInspection: 'https://hook.eu1.make.com/n1u2rupk519l9chdcsf9dccs5dubifue'
 };
 
 async function callHook(url, payload){
@@ -86,7 +88,7 @@ let state = {
   screen:'login', loginTab:'najemce', pin:'', adminUser:'', adminPass:'', error:'', loading:false,
   clientData:null,
   adminTab:'nemovitosti',
-  properties:[], clients:[], issues:[], issueText:'', issueSent:false,
+  properties:[], clients:[], issues:[], inspections:[], payments:[], issueText:'', issueSent:false,
 };
 
 function setState(patch){ state = {...state, ...patch}; render(); }
@@ -145,7 +147,7 @@ async function tryLogin(){
 }
 function logout(){
   state = {screen:'login', loginTab:'najemce', pin:'', adminUser:'', adminPass:'', error:'', loading:false,
-    clientData:null, adminTab:'nemovitosti', properties:[], clients:[], issues:[], issueText:'', issueSent:false};
+    clientData:null, adminTab:'nemovitosti', properties:[], clients:[], issues:[], inspections:[], payments:[], issueText:'', issueSent:false};
   render();
 }
 
@@ -191,9 +193,25 @@ async function loadAdminData(){
     AdminNote: r.fields.AdminNote || '',
     Resolved: !!r.fields.Resolved
   }));
+  const inspections = (data.inspections && data.inspections.records || []).map(r => ({
+    recId: r.id,
+    PropertyID: r.fields.PropertyID || '',
+    Date: r.fields.Date || '',
+    Note: r.fields.Note || '',
+    Done: !!r.fields.Done
+  }));
+  const payments = (data.payments && data.payments.records || []).map(r => ({
+    recId: r.id,
+    ClientID: r.fields.ClientID || '',
+    Amount: r.fields.Amount || '',
+    PayerAccount: r.fields.PayerAccount || '',
+    DateReceived: r.fields.DateReceived || ''
+  }));
   state.properties = properties;
   state.clients = clients;
   state.issues = issues;
+  state.inspections = inspections;
+  state.payments = payments;
 }
 
 /* ---------------- RENDER ---------------- */
@@ -342,6 +360,10 @@ function renderPodnajemce(){
     ${d.contractLink ? `<div style="margin-top:6px;"><a href="${d.contractLink}" target="_blank">Otevřít smlouvu</a></div>` : ''}
   </div>
   ${d.handoverPhotos ? `<div class="card"><h3>Fotky bytu při převzetí</h3><a href="${d.handoverPhotos}" target="_blank">otevřít fotky</a></div>` : ''}
+  <div class="card">
+    <h3>Historie plateb</h3>
+    ${(d.payments && d.payments.length) ? d.payments.map(p=>`<div class="note">${fmtDate(p.fields&&p.fields.DateReceived)}: ${fmtCZK(p.fields&&p.fields.Amount)}</div>`).join('') : `<div class="muted">Zatím žádné přijaté platby.</div>`}
+  </div>
   ${renderIssueBox(d)}
   `;
 }
@@ -359,17 +381,20 @@ function renderQrBox(d){
 /* ---------- ADMIN VIEW ---------- */
 function renderAdmin(){
   const unresolvedCount = state.issues.filter(i=>!i.Resolved).length;
+  const upcomingCount = state.inspections.filter(i=>!i.Done && daysUntil(i.Date)!==null && daysUntil(i.Date)<=7 && daysUntil(i.Date)>=0).length;
   return `
   <div class="tabs">
     <button data-t="nemovitosti" class="${state.adminTab==='nemovitosti'?'active':''}">Nemovitosti</button>
     <button data-t="klienti" class="${state.adminTab==='klienti'?'active':''}">Klienti a PIN</button>
     <button data-t="platby" class="${state.adminTab==='platby'?'active':''}">Splatnosti a platby</button>
     <button data-t="zavady" class="${state.adminTab==='zavady'?'active':''}">Závady${unresolvedCount?` <span class="badge due">${unresolvedCount}</span>`:''}</button>
+    <button data-t="prohlidky" class="${state.adminTab==='prohlidky'?'active':''}">Prohlídky bytu${upcomingCount?` <span class="badge warn">${upcomingCount}</span>`:''}</button>
   </div>
   ${state.adminTab==='nemovitosti' ? renderAdminProperties() : ''}
   ${state.adminTab==='klienti' ? renderAdminClients() : ''}
   ${state.adminTab==='platby' ? renderAdminPayments() : ''}
   ${state.adminTab==='zavady' ? renderAdminIssues() : ''}
+  ${state.adminTab==='prohlidky' ? renderAdminInspections() : ''}
   `;
 }
 
@@ -482,6 +507,46 @@ function renderAdminClients(){
   `;
 }
 
+function renderAdminInspections(){
+  return `
+  <div class="card">
+    <h3>Naplánovat prohlídku</h3>
+    <div class="row">
+      <div><label>Nemovitost (PropertyID)</label>
+        <select id="insPropertyId">${state.properties.map(p=>`<option value="${p.PropertyID}">${p.Address}</option>`).join('')}</select>
+      </div>
+      <div><label>Datum</label><input type="date" id="insDate"></div>
+    </div>
+    <label>Poznámka</label><textarea id="insNote"></textarea>
+    <div class="err" id="err_ins_new"></div>
+    <button class="btn" onclick="addInspectionRow()">Přidat prohlídku</button>
+  </div>
+  ${state.inspections.slice().sort((a,b)=>new Date(a.Date)-new Date(b.Date)).map(ins=>{
+    const p = state.properties.find(x=>x.PropertyID===ins.PropertyID);
+    const d = daysUntil(ins.Date);
+    const soon = !ins.Done && d!==null && d<=7 && d>=0;
+    return `<div class="card">
+      <div class="top-row">
+        <div><strong>${p?p.Address:ins.PropertyID}</strong> – ${fmtDate(ins.Date)} ${soon?'<span class="badge warn">blíží se</span>':''} ${ins.Done?'<span class="badge ok">hotovo</span>':''}</div>
+      </div>
+      <label>Poznámka</label>
+      <textarea data-ins="${ins.recId}" data-f="Note">${ins.Note}</textarea>
+      <label style="display:flex; align-items:center; gap:8px; margin-top:10px;">
+        <input type="checkbox" data-ins="${ins.recId}" data-f="Done" ${ins.Done?'checked':''} style="width:auto;"> Hotovo
+      </label>
+      <div class="err" id="err_ins_${ins.recId}"></div>
+      <button class="btn" onclick="saveInspectionRow('${ins.recId}')">Uložit</button>
+    </div>`;
+  }).join('') || '<div class="card muted">Zatím žádné naplánované prohlídky.</div>'}
+  `;
+}
+
+function paymentHistoryHtml(clientId){
+  const hist = state.payments.filter(p=>p.ClientID===clientId);
+  if(!hist.length) return `<div class="muted" style="margin-top:8px;">Zatím žádné přijaté platby.</div>`;
+  return `<div style="margin-top:8px;">${hist.map(p=>`<div class="note">${fmtDate(p.DateReceived)}: ${fmtCZK(p.Amount)} ${p.PayerAccount?('z účtu '+p.PayerAccount):''}</div>`).join('')}</div>`;
+}
+
 function renderAdminPayments(){
   return state.clients.map(c=>{
     const p = state.properties.find(x=>x.PropertyID===c.PropertyID);
@@ -496,6 +561,8 @@ function renderAdminPayments(){
         <div class="muted">Splatnost k majiteli: ${nextDueDate(p?p.PayoutDueDay:null)||'—'}</div>
       </div>
       <button class="btn ghost" onclick="togglePaid('${c.recId}')">${c.Paid?'Označit jako neuhrazeno':'Označit jako uhrazeno'}</button>
+      <h3 style="margin-top:16px;">Historie plateb</h3>
+      ${paymentHistoryHtml(c.ClientID)}
     </div>`;
   }).join('') + `<div class="card muted">Automatické párování bankovních plateb (např. notifikace z ČSOB) appka zatím nemá – platby se označují ručně zde.</div>`;
 }
@@ -575,6 +642,38 @@ async function saveIssueRow(recId){
     setTimeout(()=>{ render(); }, 700);
   }catch(e){
     document.getElementById('err_i_'+recId).textContent = 'Uložení se nezdařilo, zkuste to prosím znovu.';
+    btn.disabled = false; btn.textContent = 'Uložit';
+  }
+}
+
+async function addInspectionRow(){
+  const propertyId = document.getElementById('insPropertyId').value;
+  const date = document.getElementById('insDate').value;
+  const note = document.getElementById('insNote').value;
+  const errEl = document.getElementById('err_ins_new');
+  if(!date){ errEl.textContent = 'Zadejte datum prohlídky.'; return; }
+  try{
+    await callHook(HOOKS.addInspection, {propertyId, date, note});
+    await loadAdminData();
+    render();
+  }catch(e){
+    errEl.textContent = 'Nepodařilo se přidat, zkuste to prosím znovu.';
+  }
+}
+
+async function saveInspectionRow(recId){
+  const ins = state.inspections.find(x=>x.recId===recId);
+  const note = document.querySelector(`[data-ins="${recId}"][data-f="Note"]`).value;
+  const done = document.querySelector(`[data-ins="${recId}"][data-f="Done"]`).checked;
+  const btn = event.target;
+  btn.disabled = true; btn.textContent = 'Ukládám...';
+  try{
+    await callHook(HOOKS.updateInspection, {recId, date: ins.Date, note, done});
+    ins.Note = note; ins.Done = done;
+    btn.textContent = 'Uloženo ✓';
+    setTimeout(()=>{ render(); }, 700);
+  }catch(e){
+    document.getElementById('err_ins_'+recId).textContent = 'Uložení se nezdařilo, zkuste to prosím znovu.';
     btn.disabled = false; btn.textContent = 'Uložit';
   }
 }
