@@ -538,14 +538,18 @@ function renderAdminClients(){
       ${contractFlag(c.ContractTo)}
       <div class="err" id="err_s_${c.recId}"></div>
       <button class="btn" onclick="saveClientRow('${c.recId}')">Uložit</button>
+      ${c.Role==='podnajemce' && c.PIN ? `<button class="btn ghost" onclick="endTenancy('${c.recId}')">Ukončit nájem (odstěhoval se)</button>` : ''}
     </div>`;
 
   const groups = state.properties.map(p=>{
     const clients = state.clients.filter(c=>c.PropertyID.toUpperCase()===p.PropertyID.toUpperCase());
     const owner = clients.filter(c=>c.Role!=='podnajemce');
-    const subs = clients.filter(c=>c.Role==='podnajemce');
+    const subsActive = clients.filter(c=>c.Role==='podnajemce' && c.PIN);
+    const subsFormer = clients.filter(c=>c.Role==='podnajemce' && !c.PIN);
     const key = 'clientgroup_'+p.recId;
     const open = !!state.expanded[key];
+    const formerKey = 'former_'+p.recId;
+    const formerOpen = !!state.expanded[formerKey];
     return `
     <div class="card">
       <div class="top-row" style="cursor:pointer;" onclick="toggleExpand('${key}')">
@@ -554,7 +558,11 @@ function renderAdminClients(){
       </div>
       ${open ? `
       ${owner.length ? owner.map(clientCard).join('') : `<div class="muted" style="margin-top:10px;">Bez majitele s přihlášením.</div>`}
-      ${subs.length ? subs.map(clientCard).join('') : `<div class="muted">Bez podnájemce.</div>`}
+      ${subsActive.length ? subsActive.map(clientCard).join('') : `<div class="muted">Bez aktivního podnájemce.</div>`}
+      ${subsFormer.length ? `
+        <div class="muted" style="cursor:pointer;margin-top:10px;" onclick="toggleExpand('${formerKey}')">${formerOpen?'▾':'▸'} Bývalí podnájemci (${subsFormer.length})</div>
+        ${formerOpen ? subsFormer.map(clientCard).join('') : ''}
+      ` : ''}
       ` : ''}
     </div>`;
   }).join('');
@@ -830,6 +838,28 @@ async function saveInspectionRow(recId){
   }catch(e){
     document.getElementById('err_ins_'+recId).textContent = 'Uložení se nezdařilo, zkuste to prosím znovu.';
     btn.disabled = false; btn.textContent = 'Uložit';
+  }
+}
+
+async function endTenancy(recId){
+  const c = state.clients.find(x=>x.recId===recId);
+  if(!confirm(`Opravdu ukončit nájem klienta "${c.Name}"? Jeho PIN přestane fungovat, historie plateb zůstane zachována.`)) return;
+  const today = new Date().toISOString().slice(0,10);
+  try{
+    await callHook(HOOKS.updateClient, {
+      clientId: c.ClientID, Name:c.Name, Role:c.Role, PropertyID:c.PropertyID, PIN:'',
+      Contact:c.Contact, ContractFrom:c.ContractFrom, ContractTo:today, DueDay:c.DueDay,
+      VariableSymbol:c.VariableSymbol, Paid:false, HandoverPhotosLink:c.HandoverPhotosLink
+    });
+    await loadAdminData();
+    state.pendingNewSubtenantProperty = c.PropertyID;
+    render();
+    const sel = document.getElementById('newClientPropertyId');
+    if(sel) sel.value = c.PropertyID;
+    const roleSel = document.getElementById('newClientRole');
+    if(roleSel) roleSel.value = 'podnajemce';
+  }catch(e){
+    alert('Nepodařilo se ukončit nájem, zkuste to prosím znovu.');
   }
 }
 
