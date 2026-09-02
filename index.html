@@ -128,13 +128,8 @@ async function tryLogin(){
   try{
     if(state.loginTab!=='admin'){
       const data = await callHook(HOOKS.login, {pin: state.pin.trim()});
-      if(!data.found){ setState({loading:false, error:'PIN nenalezen.'}); return; }
+      if(!data.found){ setState({loading:false, error:'Špatný PIN'}); return; }
       const role = (data.role||'').trim();
-      const expected = state.loginTab==='podnajemce' ? 'podnajemce' : 'majitel';
-      if(role !== expected){
-        setState({loading:false, error: role==='podnajemce' ? 'Tento PIN patří podnájemci – zkuste záložku "Jsem podnájemce".' : 'Tento PIN patří majiteli bytu – zkuste záložku "Jsem majitel bytu".'});
-        return;
-      }
       setState({loading:false, screen: role==='podnajemce' ? 'podnajemce' : 'majitel', clientData: data, pin:''});
     } else {
       const data = await callHook(HOOKS.adminLogin, {username: state.adminUser.trim(), password: state.adminPass});
